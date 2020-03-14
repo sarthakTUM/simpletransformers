@@ -212,10 +212,10 @@ class ClassificationModel:
         if self.args["silent"]:
             show_running_loss = False
 
-        if self.args["evaluate_during_training"] and eval_df is None:
+        if (self.args["evaluate_during_training"] or self.args['evaluate_after_every_epoch']) and eval_df is None:
             raise ValueError(
-                "evaluate_during_training is enabled but eval_df is not specified."
-                " Pass eval_df to model.train_model() if using evaluate_during_training."
+                "evaluate_during_training or evaluate_after_every_epoch is enabled but eval_df is not specified."
+                " Pass eval_df to model.train_model() if using evaluate_during_training or evaluate_after_every_epoch."
             )
 
         if not output_dir:
@@ -337,7 +337,7 @@ class ClassificationModel:
         best_eval_loss = None
         early_stopping_counter = 0
 
-        if args["evaluate_during_training"]:
+        if args["evaluate_during_training"] or args["evaluate_after_every_epoch"]:
             training_progress_scores = self._create_training_progress_scores(multi_label, **kwargs)
 
         if args["wandb_project"]:
@@ -345,6 +345,7 @@ class ClassificationModel:
             wandb.watch(self.model)
 
         model.train()
+        print('training')
         for _ in train_iterator:
             # epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(tqdm(train_dataloader, desc="Current iteration", disable=args["silent"])):
@@ -404,7 +405,7 @@ class ClassificationModel:
                                 }
                             )
 
-                    if args["save_steps"] > 0 and global_step % args["save_steps"] == 0:
+                    if args['save_during_training'] and args["save_steps"] > 0 and global_step % args["save_steps"] == 0:
                         # Save model checkpoint
                         output_dir_current = os.path.join(output_dir, "checkpoint-{}".format(global_step))
 
@@ -439,10 +440,10 @@ class ClassificationModel:
                             wandb.log(self._get_last_metrics(training_progress_scores))
 
                         if not best_eval_loss:
-                            best_eval_loss = results["eval_loss"]
+                            best_eval_loss = results[args['early_stopping_metric']]
                             self._save_model(args["best_model_dir"], model=model, results=results)
-                        elif results["eval_loss"] - best_eval_loss < args["early_stopping_delta"]:
-                            best_eval_loss = results["eval_loss"]
+                        elif results[args['early_stopping_metric']] - best_eval_loss > args["early_stopping_delta"]:
+                            best_eval_loss = results[args['early_stopping_metric']]
                             self._save_model(args["best_model_dir"], model=model, results=results)
                             early_stopping_counter = 0
                         else:
@@ -465,15 +466,15 @@ class ClassificationModel:
             epoch_number += 1
             output_dir_current = os.path.join(output_dir, "checkpoint-{}-epoch-{}".format(global_step, epoch_number))
 
-            if args["save_model_every_epoch"] or args["evaluate_during_training"]:
+            if args["save_model_every_epoch"] or args["evaluate_during_training"] or args["evaluate_after_every_epoch"]:
                 os.makedirs(output_dir_current, exist_ok=True)
 
             if args["save_model_every_epoch"]:
                 self._save_model(output_dir_current, model=model)
 
-            if args["evaluate_during_training"]:
+            if args["evaluate_after_every_epoch"]:
                 results, _, _ = self.eval_model(
-                    eval_df, verbose=verbose and args["evaluate_during_training_verbose"], silent=True, **kwargs
+                    eval_df, verbose=verbose and args["evaluate_after_every_epoch_verbose"], silent=True, **kwargs
                 )
 
                 self._save_model(output_dir_current, results=results)
@@ -486,10 +487,10 @@ class ClassificationModel:
                 report.to_csv(os.path.join(args["output_dir"], "training_progress_scores.csv"), index=False)
 
                 if not best_eval_loss:
-                    best_eval_loss = results["eval_loss"]
+                    best_eval_loss = results[args["early_stopping_metric"]]
                     self._save_model(args["best_model_dir"], model=model, results=results)
-                elif results["eval_loss"] - best_eval_loss < args["early_stopping_delta"]:
-                    best_eval_loss = results["eval_loss"]
+                elif results[args["early_stopping_metric"]] - best_eval_loss > args["early_stopping_delta"]:
+                    best_eval_loss = results[args["early_stopping_metric"]]
                     self._save_model(args["best_model_dir"], model=model, results=results)
                     early_stopping_counter = 0
                 else:
