@@ -1,11 +1,20 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0) [![Downloads](https://pepy.tech/badge/simpletransformers)](https://pepy.tech/project/simpletransformers)
 <!-- ALL-CONTRIBUTORS-BADGE:START - Do not remove or modify this section -->
-[![All Contributors](https://img.shields.io/badge/all_contributors-20-orange.svg?style=flat-square)](#contributors-)
+[![All Contributors](https://img.shields.io/badge/all_contributors-22-orange.svg?style=flat-square)](#contributors-)
 <!-- ALL-CONTRIBUTORS-BADGE:END -->
 
 # Simple Transformers
 
-This library is based on the [Transformers](https://github.com/huggingface/transformers) library by HuggingFace. Simple Transformers lets you quickly train and evaluate Transformer models. Only 3 lines of code are needed to initialize a model, train the model, and evaluate a model. Currently supports Sequence Classification, Token Classification (NER), Question Answering, Multi-Modal Classification, and Conversational AI.
+This library is based on the [Transformers](https://github.com/huggingface/transformers) library by HuggingFace. Simple Transformers lets you quickly train and evaluate Transformer models. Only 3 lines of code are needed to initialize a model, train the model, and evaluate a model.
+
+Supports
+- Sequence Classification
+- Token Classification (NER)
+- Question Answering
+- Language Model Fine-Tuning
+- Language Model Training
+- Multi-Modal Classification
+- Conversational AI.
 
 # Table of contents
 
@@ -41,8 +50,27 @@ This library is based on the [Transformers](https://github.com/huggingface/trans
       - [*n_best_size: int*](#nbestsize-int)
       - [*max_answer_length: int*](#maxanswerlength-int)
       - [*null_score_diff_threshold: float*](#nullscorediffthreshold-float)
-  - [Conversational AI](#conversational-ai)
+  - [Language Model Training](#language-model-training)
     - [Data format](#data-format-1)
+    - [Minimal Example For Language Model Fine Tuning](#minimal-example-for-language-model-fine-tuning)
+    - [Minimal Example For Language Model Training From Scratch](#minimal-example-for-language-model-training-from-scratch)
+    - [LanguageModelingModel](#languagemodelingmodel)
+    - [Additional attributes for Language Modeling tasks](#additional-attributes-for-language-modeling-tasks)
+      - [*dataset_type: str*](#datasettype-str)
+      - [*dataset_class: Subclass of Pytorch Dataset*](#datasetclass-subclass-of-pytorch-dataset)
+      - [*block_size: int*](#blocksize-int)
+      - [*mlm: bool*](#mlm-bool)
+      - [*mlm_probability: float*](#mlmprobability-float)
+      - [*max_steps: int*](#maxsteps-int)
+      - [*config_name: str*](#configname-str)
+      - [*tokenizer_name: str*](#tokenizername-str)
+      - [*vocab_size: int*](#vocabsize-int)
+      - [*min_frequencey: int*](#minfrequencey-int)
+      - [*special_tokens: list*](#specialtokens-list)
+      - [*sliding_window: bool*](#slidingwindow-bool)
+      - [*stride: float*](#stride-float)
+  - [Conversational AI](#conversational-ai)
+    - [Data format](#data-format-2)
     - [Minimal Example](#minimal-example-1)
     - [Real Dataset Example](#real-dataset-example)
     - [ConvAIModel](#convaimodel)
@@ -59,7 +87,7 @@ This library is based on the [Transformers](https://github.com/huggingface/trans
       - [*top_k: float*](#topk-float)
       - [*top_p: float*](#topp-float)
   - [Multi-Modal Classification](#multi-modal-classification)
-    - [Data format](#data-format-2)
+    - [Data format](#data-format-3)
       - [1 - Directory based](#1---directory-based)
       - [2 - Directory and file list](#2---directory-and-file-list)
       - [3 - Pandas DataFrame](#3---pandas-dataframe)
@@ -80,6 +108,7 @@ This library is based on the [Transformers](https://github.com/huggingface/trans
     - [Args Explained](#args-explained)
       - [*output_dir: str*](#outputdir-str)
       - [*cache_dir: str*](#cachedir-str)
+      - [*best_model_dir: str*](#bestmodeldir-str)
       - [*fp16: bool*](#fp16-bool)
       - [*fp16_opt_level: str*](#fp16optlevel-str)
       - [*max_seq_length: int*](#maxseqlength-int)
@@ -113,6 +142,9 @@ This library is based on the [Transformers](https://github.com/huggingface/trans
       - [*use_early_stopping*](#useearlystopping)
       - [*early_stopping_patience*](#earlystoppingpatience)
       - [*early_stopping_delta*](#earlystoppingdelta)
+      - [*early_stopping_metric*](#earlystoppingmetric)
+      - [*early_stopping_metric_minimize*](#earlystoppingmetricminimize)
+      - [*manual_seed*](#manualseed)
   - [Current Pretrained Models](#current-pretrained-models)
   - [Acknowledgements](#acknowledgements)
   - [Contributors ✨](#contributors-%e2%9c%a8)
@@ -192,7 +224,12 @@ Supported model types:
 ```python
 from simpletransformers.classification import ClassificationModel
 import pandas as pd
+import logging
 
+
+logging.basicConfig(level=logging.INFO)
+transformers_logger = logging.getLogger("transformers")
+transformers_logger.setLevel(logging.WARNING)
 
 # Train and Evaluation data needs to be in a Pandas Dataframe of two columns. The first column is the text with type str, and the second column is the label with type int.
 train_data = [['Example sentence belonging to class 1', 1], ['Example sentence belonging to class 0', 0]]
@@ -234,7 +271,12 @@ For multiclass classification, simply pass in the number of classes to the `num_
 ```python
 from simpletransformers.classification import ClassificationModel
 import pandas as pd
+import logging
 
+
+logging.basicConfig(level=logging.INFO)
+transformers_logger = logging.getLogger("transformers")
+transformers_logger.setLevel(logging.WARNING)
 
 # Train and Evaluation data needs to be in a Pandas Dataframe containing at least two columns. If the Dataframe has a header, it should contain a 'text' and a 'labels' column. If no header is present, the Dataframe should contain at least two columns, with the first column is the text with type str, and the second column in the label with type int.
 train_data = [['Example sentence belonging to class 1', 1], ['Example sentence belonging to class 0', 0], ['Example eval senntence belonging to class 2', 2]]
@@ -267,7 +309,12 @@ The default evaluation metric used is Label Ranking Average Precision ([LRAP](ht
 ```python
 from simpletransformers.classification import MultiLabelClassificationModel
 import pandas as pd
+import logging
 
+
+logging.basicConfig(level=logging.INFO)
+transformers_logger = logging.getLogger("transformers")
+transformers_logger.setLevel(logging.WARNING)
 
 # Train and Evaluation data needs to be in a Pandas Dataframe containing at least two columns, a 'text' and a 'labels' column. The `labels` column should contain multi-hot encoded lists.
 train_data = [['Example sentence 1 for multilabel classification.', [1, 1, 1, 1, 0, 1]]] + [['This is another example sentence. ', [0, 1, 1, 0, 0, 0]]]
@@ -317,7 +364,12 @@ print(raw_outputs)
 from simpletransformers.classification import ClassificationModel
 import pandas as pd
 import sklearn
+import logging
 
+
+logging.basicConfig(level=logging.INFO)
+transformers_logger = logging.getLogger("transformers")
+transformers_logger.setLevel(logging.WARNING)
 
 train_data = [
     ['Example sentence belonging to class 1', 'Yep, this is 1', 1],
@@ -373,7 +425,7 @@ This class  is used for Text Classification tasks.
 `Class attributes`
 * `tokenizer`: The tokenizer to be used.
 * `model`: The model to be used.
-* `model_name`: model_name: Default Transformer model name or path to Transformer model file (pytorch_nodel.bin).
+* `model_name`: model_name: Default Transformer model name or path to Transformer model file (pytorch_model.bin).
 * `device`: The device on which the model will be trained and evaluated.
 * `results`: A python dict of past evaluation results for the TransformerModel object.
 * `args`: A python dict of arguments used for training and evaluation.
@@ -493,7 +545,12 @@ model = NERModel('bert', 'bert-base-cased', labels=["LABEL_1", "LABEL_2", "LABEL
 ```python
 from simpletransformers.ner import NERModel
 import pandas as pd
+import logging
 
+
+logging.basicConfig(level=logging.INFO)
+transformers_logger = logging.getLogger("transformers")
+transformers_logger.setLevel(logging.WARNING)
 
 # Creating train_df  and eval_df for demonstration
 train_data = [
@@ -535,7 +592,7 @@ This class  is used for Named Entity Recognition.
 `Class attributes`
 * `tokenizer`: The tokenizer to be used.
 * `model`: The model to be used.
-            model_name: Default Transformer model name or path to Transformer model file (pytorch_nodel.bin).
+            model_name: Default Transformer model name or path to Transformer model file (pytorch_model.bin).
 * `device`: The device on which the model will be trained and evaluated.
 * `results`: A python dict of past evaluation results for the TransformerModel object.
 * `args`: A python dict of arguments used for training and evaluation.
@@ -618,7 +675,7 @@ Converts a list of InputExample objects to a TensorDataset containing InputFeatu
 
 _[Back to Table of Contents](#table-of-contents)_
 
-___
+---
 
 ## Question Answering
 
@@ -656,7 +713,12 @@ A single answer is represented by a dictionary with the following attributes.
 from simpletransformers.question_answering import QuestionAnsweringModel
 import json
 import os
+import logging
 
+
+logging.basicConfig(level=logging.INFO)
+transformers_logger = logging.getLogger("transformers")
+transformers_logger.setLevel(logging.WARNING)
 
 # Create dummy data to use for training.
 train_data = [
@@ -747,7 +809,7 @@ This class is used for Question Answering tasks.
 `Class attributes`
 - `tokenizer`: The tokenizer to be used.
 - `model`: The model to be used.
-            model_name: Default Transformer model name or path to Transformer model file (pytorch_nodel.bin).
+            model_name: Default Transformer model name or path to Transformer model file (pytorch_model.bin).
 - `device`: The device on which the model will be trained and evaluated.
 - `results`: A python dict of past evaluation results for the TransformerModel object.
 - `args`: A python dict of arguments used for training and evaluation.
@@ -875,6 +937,257 @@ If null_score - best_non_null is greater than the threshold predict null.
 _[Back to Table of Contents](#table-of-contents)_
 
 ---
+
+## Language Model Training
+
+Supported model types:
+
+- GPT-2
+- OpenAI-GPT
+- BERT
+- RoBERTa
+- DistilBERT
+- CamemBERT
+
+### Data format
+
+The data should simply be placed in a text file. E.g.: [WikiText-2](https://blog.einstein.ai/the-wikitext-long-term-dependency-language-modeling-dataset/)
+
+### Minimal Example For Language Model Fine Tuning
+
+The minimal example given below assumes that you have downloaded the WikiText-2 dataset.
+
+```python
+from simpletransformers.language_modeling import LanguageModelingModel
+import logging
+
+
+logging.basicConfig(level=logging.INFO)
+transformers_logger = logging.getLogger("transformers")
+transformers_logger.setLevel(logging.WARNING)
+
+train_args = {
+    "reprocess_input_data": True,
+    "overwrite_output_dir": True,
+}
+
+model = LanguageModelingModel('bert', 'bert-base-cased', args=train_args)
+
+model.train_model("wikitext-2/wiki.train.tokens", eval_file="wikitext-2/wiki.test.tokens")
+
+model.eval_model("wikitext-2/wiki.test.tokens")
+
+```
+
+### Minimal Example For Language Model Training From Scratch
+
+You can use any text file/files for training a new language model. Setting `model_name` to `None` will indicate that the language model should be trained from scratch.
+
+```python
+from simpletransformers.language_modeling import LanguageModelingModel
+import logging
+
+
+logging.basicConfig(level=logging.INFO)
+transformers_logger = logging.getLogger("transformers")
+transformers_logger.setLevel(logging.WARNING)
+
+train_args = {
+    "reprocess_input_data": True,
+    "overwrite_output_dir": True,
+}
+
+model = LanguageModelingModel('roberta', None, args=train_args)
+
+model.train_model("wikitext-2/wiki.train.tokens", eval_file="wikitext-2/wiki.test.tokens")
+
+model.eval_model("wikitext-2/wiki.test.tokens")
+
+```
+
+### LanguageModelingModel
+
+`class simpletransformers.language_modeling.LanguageModelingModel (model_type, model_name, args=None, use_cuda=True, cuda_device=-1)`  
+This class is used for Question Answering tasks.
+
+`Class attributes`
+
+- `tokenizer`: The tokenizer to be used.
+- `model`: The model to be used.
+            model_name: Default Transformer model name or path to Transformer model file (pytorch_model.bin).
+- `device`: The device on which the model will be trained and evaluated.
+- `results`: A python dict of past evaluation results for the TransformerModel object.
+- `args`: A python dict of arguments used for training and evaluation.
+- `cuda_device`: (optional) int - Default = -1. Used to specify which GPU should be used.
+
+`Parameters`
+
+- `model_type`: (required) str - The type of model to use.
+- `model_name`: (required) str - The exact model to use. Could be a pretrained model name or path to a directory containing a model. See [Current Pretrained Models](#current-pretrained-models) for all available models.
+- `args`: (optional) python dict - A dictionary containing any settings that should be overwritten from the default values.
+- `use_cuda`: (optional) bool - Default = True. Flag used to indicate whether CUDA should be used.
+- cuda_device (optional): Specific GPU that should be used. Will use the first available GPU by default.
+
+`class methods`  
+**`train_model(self, train_file, output_dir=None, show_running_loss=True, args=None, eval_file=None, verbose=True,)`**
+
+Trains the model using 'train_file'
+
+Args:  
+
+- train_file: Path to text file containing the text to train the language model on.
+
+- output_dir (optional): The directory where model files will be saved. If not given, self.args['output_dir'] will be used.
+
+- show_running_loss (Optional): Set to False to prevent training loss being printed.
+
+- args (optional): Optional changes to the args dict of the model. Any changes made will persist for the model.
+
+- eval_file (optional): Path to eval file containing the text to evaluate the language model on. Is required if evaluate_during_training is enabled.
+
+Returns:
+
+- None
+
+**`eval_model(self, eval_file, output_dir=None, verbose=True, silent=False,)`**
+
+Evaluates the model on eval_file. Saves results to output_dir.
+
+Args:  
+
+- eval_file: Path to eval file containing the text to evaluate the language model on.
+
+- output_dir (optional): The directory where model files will be saved. If not given, self.args['output_dir'] will be used.  
+
+- verbose: If verbose, results will be printed to the console on completion of evaluation.  
+
+- silent: If silent, tqdm progress bars will be hidden.
+
+Returns:  
+
+- result: Dictionary containing evaluation results. (correct, similar, incorrect)
+
+- text: A dictionary containing the 3 dictionaries correct_text, similar_text (the predicted answer is a substring of the correct answer or vise versa), incorrect_text.
+
+**`train_tokenizer(self, train_files, tokenizer_name=None, output_dir=None, use_trained_tokenizer=True)`
+
+Train a new tokenizer on `train_files`.
+
+Args:
+
+- train_files: List of files to be used when training the tokenizer.
+
+- tokenizer_name: Name of a pretrained tokenizer or a path to a directory containing a tokenizer.
+
+- output_dir (optional): The directory where model files will be saved. If not given, self.args['output_dir'] will be used.  
+
+- use_trained_tokenizer (optional): Load the trained tokenizer once training completes.
+
+Returns: None
+
+**`train(self, train_dataset, output_dir, show_running_loss=True, eval_file=None)`**
+
+Trains the model on train_dataset.
+*Utility function to be used by the train_model() method. Not intended to be used directly.*
+
+**`evaluate(self, eval_dataset, output_dir, , verbose=False)`**
+
+Evaluates the model on eval_dataset.
+*Utility function to be used by the eval_model() method. Not intended to be used directly*
+
+**`load_and_cache_examples(self, examples, evaluate=False, no_cache=False, output_examples=False)`**
+
+Reads a text file from file_path and creates training features.
+*Utility function for train() and eval() methods. Not intended to be used directly*
+
+### Additional attributes for Language Modeling tasks
+
+LanguageModelingModel has a few additional attributes in its `args` dictionary, given below with their default values.
+
+```python
+    "dataset_type": "None",
+    "dataset_class": None,
+    "custom_tokenizer": None,
+    "block_size": 512,
+    "mlm": True,
+    "mlm_probability": 0.15,
+    "max_steps": -1,
+    "config_name": None,
+    "tokenizer_name": None,
+    "vocab_size": 52000,
+    "min_frequency": 2,
+    "special_tokens": ["<s>", "<pad>", "</s>", "<unk>", "<mask>"],
+    "sliding_window": False,
+    "stride": 0.8
+```
+
+#### *dataset_type: str*
+
+Used to specify the Dataset type to be used. The choices are given below.
+
+- `simple` (or None) - Each line in the train files are considered to be a single, separate sample. `sliding_window` can be set to True to 
+automatically split longer sequences into samples of length `max_seq_length`. Uses multiprocessing for significantly improved performance on multicore systems.
+
+- `line_by_line` - Treats each line in the train files as a seperate sample.
+  
+- `text` - Treats each file in `train_files` as a seperate sample.
+
+*Using `simple` is recommended.*
+
+#### *dataset_class: Subclass of Pytorch Dataset*
+
+A custom dataset class to use.
+
+#### *block_size: int*
+
+Optional input sequence length after tokenization.
+The training dataset will be truncated in block of this size for training.
+Default to the model max input length for single sentence inputs (take into account special tokens).
+
+#### *mlm: bool*
+
+Train with masked-language modeling loss instead of language modeling
+
+#### *mlm_probability: float*
+
+Ratio of tokens to mask for masked language modeling loss
+
+#### *max_steps: int*
+
+If > 0: set total number of training steps to perform. Override num_train_epochs.
+
+#### *config_name: str*
+
+Name of pretrained config or path to a directory containing a `config.json` file.
+
+#### *tokenizer_name: str*
+
+Name of pretrained tokenizer or path to a directory containing tokenizer files.
+
+#### *vocab_size: int*
+
+Size of the vocabulary for the tokenizer and model.
+
+#### *min_frequencey: int*
+
+Minimum frequency required for a word to be added to the vocabulary.
+
+#### *special_tokens: list*
+
+List of special tokens to be used when training a new tokenizer.
+
+#### *sliding_window: bool*
+
+Whether sliding window technique should be used when preparing data. *Only works with SimpleDataset.*
+
+#### *stride: float*
+
+A fraction of the `max_seq_length` to use as the stride when using a sliding window
+
+_[Back to Table of Contents](#table-of-contents)_
+
+---
+
 
 ## Conversational AI
 
@@ -1027,7 +1340,7 @@ This class is used to build Conversational AI.
 
 - `tokenizer`: The tokenizer to be used.
 - `model`: The model to be used.
-            model_name: Default Transformer model name or path to Transformer model file (pytorch_nodel.bin).
+            model_name: Default Transformer model name or path to Transformer model file (pytorch_model.bin).
 - `device`: The device on which the model will be trained and evaluated.
 - `results`: A python dict of past evaluation results for the TransformerModel object.
 - `args`: A python dict of arguments used for training and evaluation.
@@ -1283,7 +1596,7 @@ Available arguments:
 """
 Args:
     model_type: The type of model (bert, xlnet, xlm, roberta, distilbert, albert)
-    model_name: Default Transformer model name or path to a directory containing Transformer model file (pytorch_nodel.bin).
+    model_name: Default Transformer model name or path to a directory containing Transformer model file (pytorch_model.bin).
     multi_label (optional): Set to True for multi label tasks.
     label_list (optional) : A list of all the labels (str) in the dataset.
     num_labels (optional): The number of labels or classes in the dataset.
@@ -1564,6 +1877,7 @@ key: value pairs to the the init method of a Model class.
 self.args = {
   "output_dir": "outputs/",
   "cache_dir": "cache/",
+  "best_model_dir": "outputs/best_model/",
 
   "fp16": True,
   "fp16_opt_level": "O1",
@@ -1605,6 +1919,8 @@ self.args = {
   "use_early_stopping": True,
   "early_stopping_patience": 3,
   "early_stopping_delta": 0,
+  "early_stopping_metric": "eval_loss",
+  "early_stopping_metric_minimize": True,
 
   "manual_seed": None,
 }
@@ -1617,6 +1933,9 @@ The directory where all outputs will be stored. This includes model checkpoints 
 
 #### *cache_dir: str*
 The directory where cached files will be saved.
+
+#### *best_model_dir: str*
+The directory where the best model (model checkpoints) will be saved if evaluate_during_training is enabled and the training loop achieves a lowest evaluation loss calculated after every evaluate_during_training_steps, or an epoch.
 
 #### *fp16: bool*
 Whether or not fp16 mode should be used. Requires NVidia Apex library.
@@ -1710,13 +2029,22 @@ Name of W&B project. This will log all hyperparameter values, training losses, a
 Dictionary of keyword arguments to be passed to the W&B project.
 
 #### *use_early_stopping*
-Use early stopping to stop training when `eval_loss` doesn't improve (based on `early_stopping_patience`, and `early_stopping_delta`)
+Use early stopping to stop training when `early_stopping_metric` doesn't improve (based on `early_stopping_patience`, and `early_stopping_delta`)
 
 #### *early_stopping_patience*
 Terminate training after this many evaluations without an improvement in `eval_loss` greater then `early_stopping_delta`.
 
 #### *early_stopping_delta*
-The improvement over `best_eval_loss` necessary to count as a better checkpoint
+The improvement over `best_eval_loss` necessary to count as a better checkpoint.
+
+#### *early_stopping_metric*
+The metric that should be used with early stopping. (Should be computed during `eval_during_training`).
+
+#### *early_stopping_metric_minimize*
+Whether `early_stopping_metric` should be minimized (or maximized).
+
+#### *manual_seed*
+Set a manual seed if necessary for reproducible results.
 
 ---
 
@@ -1771,6 +2099,11 @@ Thanks goes to these wonderful people ([emoji key](https://allcontributors.org/d
     <td align="center"><a href="https://github.com/adrienrenaud"><img src="https://avatars3.githubusercontent.com/u/6208157?v=4" width="100px;" alt=""/><br /><sub><b>Adrien Renaud</b></sub></a><br /><a href="https://github.com/ThilinaRajapakse/simpletransformers/commits?author=adrienrenaud" title="Code">💻</a></td>
     <td align="center"><a href="https://github.com/jacky18008"><img src="https://avatars0.githubusercontent.com/u/9031441?v=4" width="100px;" alt=""/><br /><sub><b>jacky18008</b></sub></a><br /><a href="https://github.com/ThilinaRajapakse/simpletransformers/commits?author=jacky18008" title="Code">💻</a></td>
     <td align="center"><a href="https://github.com/seo-95"><img src="https://avatars0.githubusercontent.com/u/38254541?v=4" width="100px;" alt=""/><br /><sub><b>Matteo Senese</b></sub></a><br /><a href="https://github.com/ThilinaRajapakse/simpletransformers/commits?author=seo-95" title="Code">💻</a></td>
+    <td align="center"><a href="https://github.com/sarthakTUM"><img src="https://avatars2.githubusercontent.com/u/23062869?v=4" width="100px;" alt=""/><br /><sub><b>sarthakTUM</b></sub></a><br /><a href="https://github.com/ThilinaRajapakse/simpletransformers/commits?author=sarthakTUM" title="Documentation">📖</a> <a href="https://github.com/ThilinaRajapakse/simpletransformers/commits?author=sarthakTUM" title="Code">💻</a></td>
+  </tr>
+  <tr>
+    <td align="center"><a href="https://github.com/djstrong"><img src="https://avatars1.githubusercontent.com/u/1849959?v=4" width="100px;" alt=""/><br /><sub><b>djstrong</b></sub></a><br /><a href="https://github.com/ThilinaRajapakse/simpletransformers/commits?author=djstrong" title="Code">💻</a></td>
+    <td align="center"><a href="http://kozistr.tech"><img src="https://avatars2.githubusercontent.com/u/15344796?v=4" width="100px;" alt=""/><br /><sub><b>Hyeongchan Kim</b></sub></a><br /><a href="https://github.com/ThilinaRajapakse/simpletransformers/commits?author=kozistr" title="Documentation">📖</a></td>
   </tr>
 </table>
 

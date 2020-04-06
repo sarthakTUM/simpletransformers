@@ -2,6 +2,7 @@ import torch
 
 from multiprocessing import cpu_count
 import warnings
+import logging
 
 from simpletransformers.classification import ClassificationModel
 from simpletransformers.custom_models.models import (
@@ -12,6 +13,7 @@ from simpletransformers.custom_models.models import (
     DistilBertForMultiLabelSequenceClassification,
     AlbertForMultiLabelSequenceClassification,
     FlaubertForMultiLabelSequenceClassification,
+    XLMRobertaForMultiLabelSequenceClassification,
 )
 from simpletransformers.config.global_args import global_args
 
@@ -31,6 +33,8 @@ from transformers import (
     AlbertTokenizer,
     FlaubertConfig,
     FlaubertTokenizer,
+    XLMRobertaConfig,
+    XLMRobertaTokenizer,
 )
 
 try:
@@ -39,6 +43,8 @@ try:
     wandb_available = True
 except ImportError:
     wandb_available = False
+
+logger = logging.getLogger(__name__)
 
 
 class MultiLabelClassificationModel(ClassificationModel):
@@ -76,6 +82,7 @@ class MultiLabelClassificationModel(ClassificationModel):
             "distilbert": (DistilBertConfig, DistilBertForMultiLabelSequenceClassification, DistilBertTokenizer,),
             "albert": (AlbertConfig, AlbertForMultiLabelSequenceClassification, AlbertTokenizer,),
             "flaubert": (FlaubertConfig, FlaubertForMultiLabelSequenceClassification, FlaubertTokenizer,),
+            "xlmroberta": (XLMRobertaConfig, XLMRobertaForMultiLabelSequenceClassification, XLMRobertaTokenizer,),
         }
 
         config_class, model_class, tokenizer_class = MODEL_CLASSES[model_type]

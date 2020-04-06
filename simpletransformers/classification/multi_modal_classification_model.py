@@ -9,6 +9,7 @@ import math
 import json
 import random
 import warnings
+import logging
 
 from multiprocessing import cpu_count
 
@@ -59,13 +60,9 @@ except ImportError:
     wandb_available = False
 
 
-ALL_MODELS = sum(
-    (
-        tuple(conf.pretrained_config_archive_map.keys())
-        for conf in [BertConfig]
-    ),
-    (),
-)
+ALL_MODELS = sum((tuple(conf.pretrained_config_archive_map.keys()) for conf in [BertConfig]), (),)
+
+logger = logging.getLogger(__name__)
 
 
 class MultiModalClassificationModel:
@@ -338,7 +335,7 @@ class MultiModalClassificationModel:
         self._save_model(output_dir, model=self.model)
 
         if verbose:
-            print("Training of {} model complete. Saved to {}.".format(self.args["model_type"], output_dir))
+            logger.info(" Training of {} model complete. Saved to {}.".format(self.args["model_type"], output_dir))
 
     def train(
         self, train_dataset, output_dir, show_running_loss=True, eval_data=None, verbose=True, **kwargs,
@@ -505,7 +502,7 @@ class MultiModalClassificationModel:
                             training_progress_scores[key].append(results[key])
                         report = pd.DataFrame(training_progress_scores)
                         report.to_csv(
-                            args["output_dir"] + "training_progress_scores.csv", index=False,
+                            os.path.join(args["output_dir"], "training_progress_scores.csv"), index=False,
                         )
 
                         if args["wandb_project"]:
@@ -524,17 +521,13 @@ class MultiModalClassificationModel:
                                     if early_stopping_counter < args["early_stopping_patience"]:
                                         early_stopping_counter += 1
                                         if verbose:
-                                            print()
-                                            print(f"No improvement in {args['early_stopping_metric']}")
-                                            print(f"Current step: {early_stopping_counter}")
-                                            print(f"Early stopping patience: {args['early_stopping_patience']}")
-                                            print()
+                                            logger.info(f" No improvement in {args['early_stopping_metric']}")
+                                            logger.info(f" Current step: {early_stopping_counter}")
+                                            logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
                                     else:
                                         if verbose:
-                                            print()
-                                            print(f"Patience of {args['early_stopping_patience']} steps reached.")
-                                            print("Training terminated.")
-                                            print()
+                                            logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                            logger.info(" Training terminated.")
                                             train_iterator.close()
                                         return global_step, tr_loss / global_step
                         else:
@@ -547,17 +540,13 @@ class MultiModalClassificationModel:
                                     if early_stopping_counter < args["early_stopping_patience"]:
                                         early_stopping_counter += 1
                                         if verbose:
-                                            print()
-                                            print(f"No improvement in {args['early_stopping_metric']}")
-                                            print(f"Current step: {early_stopping_counter}")
-                                            print(f"Early stopping patience: {args['early_stopping_patience']}")
-                                            print()
+                                            logger.info(f" No improvement in {args['early_stopping_metric']}")
+                                            logger.info(f" Current step: {early_stopping_counter}")
+                                            logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
                                     else:
                                         if verbose:
-                                            print()
-                                            print(f"Patience of {args['early_stopping_patience']} steps reached.")
-                                            print("Training terminated.")
-                                            print()
+                                            logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                            logger.info(" Training terminated.")
                                             train_iterator.close()
                                         return global_step, tr_loss / global_step
 
@@ -582,7 +571,9 @@ class MultiModalClassificationModel:
                 for key in results:
                     training_progress_scores[key].append(results[key])
                 report = pd.DataFrame(training_progress_scores)
-                report.to_csv(args["output_dir"] + "training_progress_scores.csv", index=False)
+                report.to_csv(
+                    os.path.join(args["output_dir"], "training_progress_scores.csv"), index=False,
+                )
 
                 if not best_eval_metric:
                     best_eval_metric = results[args["early_stopping_metric"]]
@@ -689,7 +680,7 @@ class MultiModalClassificationModel:
         self.results.update(result)
 
         if verbose:
-            print(self.results)
+            logger.info(self.results)
 
         return result, model_outputs
 

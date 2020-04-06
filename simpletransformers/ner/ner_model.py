@@ -5,6 +5,7 @@ import math
 import json
 import random
 import warnings
+import logging
 from multiprocessing import cpu_count
 
 import torch
@@ -54,9 +55,12 @@ from simpletransformers.config.global_args import global_args
 
 try:
     import wandb
+
     wandb_available = True
 except ImportError:
     wandb_available = False
+
+logger = logging.getLogger(__name__)
 
 
 class NERModel:
@@ -75,12 +79,12 @@ class NERModel:
             cuda_device (optional): Specific GPU that should be used. Will use the first available GPU by default.
         """  # noqa: ignore flake8"
 
-        if args and 'manual_seed' in args:
-            random.seed(args['manual_seed'])
-            np.random.seed(args['manual_seed'])
-            torch.manual_seed(args['manual_seed'])
-            if 'n_gpu' in args and args['n_gpu'] > 0:
-                torch.cuda.manual_seed_all(args['manual_seed'])
+        if args and "manual_seed" in args:
+            random.seed(args["manual_seed"])
+            np.random.seed(args["manual_seed"])
+            torch.manual_seed(args["manual_seed"])
+            if "n_gpu" in args and args["n_gpu"] > 0:
+                torch.cuda.manual_seed_all(args["manual_seed"])
 
         if labels:
             self.labels = labels
@@ -208,7 +212,7 @@ class NERModel:
         self.tokenizer.save_pretrained(output_dir)
         torch.save(self.args, os.path.join(output_dir, "training_args.bin"))
 
-        print("Training of {} model complete. Saved to {}.".format(self.args["model_type"], output_dir))
+        logger.info(" Training of {} model complete. Saved to {}.".format(self.args["model_type"], output_dir))
 
     def train(self, train_dataset, output_dir, show_running_loss=True, eval_df=None, verbose=True):
         """
@@ -261,10 +265,33 @@ class NERModel:
         global_step = 0
         tr_loss, logging_loss = 0.0, 0.0
         model.zero_grad()
-        train_iterator = trange(int(args["num_train_epochs"]), desc="Epoch", disable=args["silent"])
+        train_iterator = trange(int(args["num_train_epochs"]), desc="Epoch", disable=args["silent"], mininterval=0)
         epoch_number = 0
-        best_eval_loss = None
+        best_eval_metric = None
         early_stopping_counter = 0
+        steps_trained_in_current_epoch = 0
+        epochs_trained = 0
+
+        if args["model_name"] and os.path.exists(args["model_name"]):
+            try:
+                # set global_step to gobal_step of last saved checkpoint from model path
+                checkpoint_suffix = args["model_name"].split("/")[-1].split("-")
+                if len(checkpoint_suffix) > 2:
+                    checkpoint_suffix = checkpoint_suffix[1]
+                else:
+                    checkpoint_suffix = checkpoint_suffix[-1]
+                global_step = int(checkpoint_suffix)
+                epochs_trained = global_step // (len(train_dataloader) // args["gradient_accumulation_steps"])
+                steps_trained_in_current_epoch = global_step % (
+                    len(train_dataloader) // args["gradient_accumulation_steps"]
+                )
+
+                logger.info("   Continuing training from checkpoint, will skip to saved global_step")
+                logger.info("   Continuing training from epoch %d", epochs_trained)
+                logger.info("   Continuing training from global step %d", global_step)
+                logger.info("   Will skip the first %d steps in the current epoch", steps_trained_in_current_epoch)
+            except ValueError:
+                logger.info("   Starting fine-tuning.")
 
         if args["evaluate_during_training"]:
             training_progress_scores = self._create_training_progress_scores()
@@ -274,8 +301,14 @@ class NERModel:
 
         model.train()
         for _ in train_iterator:
+            if epochs_trained > 0:
+                epochs_trained -= 1
+                continue
             # epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(tqdm(train_dataloader, desc="Current iteration", disable=args["silent"])):
+                if steps_trained_in_current_epoch > 0:
+                    steps_trained_in_current_epoch -= 1
+                    continue
                 batch = tuple(t.to(device) for t in batch)
 
                 inputs = self._get_inputs_dict(batch)
@@ -338,7 +371,7 @@ class NERModel:
                         # Save model checkpoint
                         output_dir_current = os.path.join(output_dir, "checkpoint-{}".format(global_step))
 
-                        self._save_model(output_dir_current, model=model)
+                        self._save_model(output_dir_current, optimizer, scheduler, model=model)
 
                     if args["evaluate_during_training"] and (
                         args["evaluate_during_training_steps"] > 0
@@ -354,7 +387,7 @@ class NERModel:
                         os.makedirs(output_dir_current, exist_ok=True)
 
                         if args["save_eval_checkpoints"]:
-                            self._save_model(output_dir_current, model=model, results=results)
+                            self._save_model(output_dir_current, optimizer, scheduler, model=model, results=results)
 
                         training_progress_scores["global_step"].append(global_step)
                         training_progress_scores["train_loss"].append(current_loss)
@@ -368,29 +401,51 @@ class NERModel:
                         if args["wandb_project"]:
                             wandb.log(self._get_last_metrics(training_progress_scores))
 
-                        if not best_eval_loss:
-                            best_eval_loss = results["eval_loss"]
-                            self._save_model(args["best_model_dir"], model=model, results=results)
-                        elif results["eval_loss"] - best_eval_loss < args["early_stopping_delta"]:
-                            best_eval_loss = results["eval_loss"]
-                            self._save_model(args["best_model_dir"], model=model, results=results)
-                            early_stopping_counter = 0
+                        if not best_eval_metric:
+                            best_eval_metric = results[args["early_stopping_metric"]]
+                            self._save_model(args["best_model_dir"], optimizer, scheduler, model=model, results=results)
+                        if best_eval_metric and args["early_stopping_metric_minimize"]:
+                            if results[args["early_stopping_metric"]] - best_eval_metric < args["early_stopping_delta"]:
+                                best_eval_metric = results[args["early_stopping_metric"]]
+                                self._save_model(
+                                    args["best_model_dir"], optimizer, scheduler, model=model, results=results
+                                )
+                                early_stopping_counter = 0
+                            else:
+                                if args["use_early_stopping"]:
+                                    if early_stopping_counter < args["early_stopping_patience"]:
+                                        early_stopping_counter += 1
+                                        if verbose:
+                                            logger.info(f" No improvement in {args['early_stopping_metric']}")
+                                            logger.info(f" Current step: {early_stopping_counter}")
+                                            logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
+                                    else:
+                                        if verbose:
+                                            logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                            logger.info(" Training terminated.")
+                                            train_iterator.close()
+                                        return global_step, tr_loss / global_step
                         else:
-                            if args["use_early_stopping"]:
-                                if early_stopping_counter < args["early_stopping_patience"]:
-                                    early_stopping_counter += 1
-                                    if verbose:
-                                        print()
-                                        print(f"No improvement in eval_loss for {early_stopping_counter} steps.")
-                                        print(f"Training will stop at {args['early_stopping_patience']} steps.")
-                                        print()
-                                else:
-                                    if verbose:
-                                        print()
-                                        print(f"Patience of {args['early_stopping_patience']} steps reached.")
-                                        print("Training terminated.")
-                                        print()
-                                    return global_step, tr_loss / global_step
+                            if results[args["early_stopping_metric"]] - best_eval_metric > args["early_stopping_delta"]:
+                                best_eval_metric = results[args["early_stopping_metric"]]
+                                self._save_model(
+                                    args["best_model_dir"], optimizer, scheduler, model=model, results=results
+                                )
+                                early_stopping_counter = 0
+                            else:
+                                if args["use_early_stopping"]:
+                                    if early_stopping_counter < args["early_stopping_patience"]:
+                                        early_stopping_counter += 1
+                                        if verbose:
+                                            logger.info(f" No improvement in {args['early_stopping_metric']}")
+                                            logger.info(f" Current step: {early_stopping_counter}")
+                                            logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
+                                    else:
+                                        if verbose:
+                                            logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                            logger.info(" Training terminated.")
+                                            train_iterator.close()
+                                        return global_step, tr_loss / global_step
 
             epoch_number += 1
             output_dir_current = os.path.join(output_dir, "checkpoint-{}-epoch-{}".format(global_step, epoch_number))
@@ -399,12 +454,12 @@ class NERModel:
                 os.makedirs(output_dir_current, exist_ok=True)
 
             if args["save_model_every_epoch"]:
-                self._save_model(output_dir_current, model=model)
+                self._save_model(output_dir_current, optimizer, scheduler, model=model)
 
             if args["evaluate_during_training"]:
                 results, _, _ = self.eval_model(eval_df, verbose=True)
 
-                self._save_model(output_dir_current, results=results)
+                self._save_model(output_dir_current, optimizer, scheduler, results=results)
 
                 training_progress_scores["global_step"].append(global_step)
                 training_progress_scores["train_loss"].append(current_loss)
@@ -413,29 +468,22 @@ class NERModel:
                 report = pd.DataFrame(training_progress_scores)
                 report.to_csv(os.path.join(args["output_dir"], "training_progress_scores.csv"), index=False)
 
-                if not best_eval_loss:
-                    best_eval_loss = results["eval_loss"]
-                    self._save_model(args["best_model_dir"], model=model, results=results)
-                elif results["eval_loss"] - best_eval_loss < args["early_stopping_delta"]:
-                    best_eval_loss = results["eval_loss"]
-                    self._save_model(args["best_model_dir"], model=model, results=results)
-                    early_stopping_counter = 0
+                if args["wandb_project"]:
+                    wandb.log(self._get_last_metrics(training_progress_scores))
+
+                if not best_eval_metric:
+                    best_eval_metric = results[args["early_stopping_metric"]]
+                    self._save_model(args["best_model_dir"], optimizer, scheduler, model=model, results=results)
+                if best_eval_metric and args["early_stopping_metric_minimize"]:
+                    if results[args["early_stopping_metric"]] - best_eval_metric < args["early_stopping_delta"]:
+                        best_eval_metric = results[args["early_stopping_metric"]]
+                        self._save_model(args["best_model_dir"], optimizer, scheduler, model=model, results=results)
+                        early_stopping_counter = 0
                 else:
-                    if args["use_early_stopping"]:
-                        if early_stopping_counter < args["early_stopping_patience"]:
-                            early_stopping_counter += 1
-                            if verbose:
-                                print()
-                                print(f"No improvement in eval_loss for {early_stopping_counter} steps.")
-                                print(f"Training will stop at {args['early_stopping_patience']} steps.")
-                                print()
-                        else:
-                            if verbose:
-                                print()
-                                print(f"Patience of {args['early_stopping_patience']} steps reached.")
-                                print("Training terminated.")
-                                print()
-                            return global_step, tr_loss / global_step
+                    if results[args["early_stopping_metric"]] - best_eval_metric > args["early_stopping_delta"]:
+                        best_eval_metric = results[args["early_stopping_metric"]]
+                        self._save_model(args["best_model_dir"], optimizer, scheduler, model=model, results=results)
+                        early_stopping_counter = 0
 
         return global_step, tr_loss / global_step
 
@@ -468,7 +516,7 @@ class NERModel:
         self.results.update(result)
 
         if verbose:
-            print(self.results)
+            logger.info(self.results)
 
         return result, model_outputs, preds_list
 
@@ -677,16 +725,17 @@ class NERModel:
                 mode, args["model_type"], args["max_seq_length"], self.num_labels, len(examples),
             ),
         )
-
-        os.makedirs(self.args["cache_dir"], exist_ok=True)
+        if not no_cache:
+            os.makedirs(self.args["cache_dir"], exist_ok=True)
 
         if os.path.exists(cached_features_file) and (
-            (not args["reprocess_input_data"] and not no_cache) or (mode == "dev" and args["use_cached_eval_features"])
+            (not args["reprocess_input_data"] and not no_cache)
+            or (mode == "dev" and args["use_cached_eval_features"] and not no_cache)
         ):
             features = torch.load(cached_features_file)
-            print(f"Features loaded from cache at {cached_features_file}")
+            logger.info(f" Features loaded from cache at {cached_features_file}")
         else:
-            print(f"Converting to features started.")
+            logger.info(f" Converting to features started.")
             features = convert_examples_to_features(
                 examples,
                 self.labels,
@@ -752,7 +801,7 @@ class NERModel:
 
         return training_progress_scores
 
-    def _save_model(self, output_dir, model=None, results=None):
+    def _save_model(self, output_dir, optimizer, scheduler, model=None, results=None):
         os.makedirs(output_dir, exist_ok=True)
 
         if model:
@@ -760,6 +809,9 @@ class NERModel:
             model_to_save = model.module if hasattr(model, "module") else model
             model_to_save.save_pretrained(output_dir)
             self.tokenizer.save_pretrained(output_dir)
+            torch.save(self.args, os.path.join(output_dir, "training_args.bin"))
+            torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
+            torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
 
         if results:
             output_eval_file = os.path.join(output_dir, "eval_results.txt")

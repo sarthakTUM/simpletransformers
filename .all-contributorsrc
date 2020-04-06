@@ -191,6 +191,31 @@
       "contributions": [
         "code"
       ]
+    },
+    {
+      "login": "sarthakTUM",
+      "name": "sarthakTUM",
+      "avatar_url": "https://avatars2.githubusercontent.com/u/23062869?v=4",
+      "profile": "https://github.com/sarthakTUM",
+      "contributions": [
+        "doc",
+        "code"
+      ]
+    },
+    {
+      "login": "djstrong",
+      "name": "djstrong",
+      "avatar_url": "https://avatars1.githubusercontent.com/u/1849959?v=4",
+      "profile": "https://github.com/djstrong",
+      "contributions": [
+        "code"
+      "login": "kozistr",
+      "name": "Hyeongchan Kim",
+      "avatar_url": "https://avatars2.githubusercontent.com/u/15344796?v=4",
+      "profile": "http://kozistr.tech",
+      "contributions": [
+        "doc"
+      ]
     }
   ],
   "contributorsPerLine": 7,
