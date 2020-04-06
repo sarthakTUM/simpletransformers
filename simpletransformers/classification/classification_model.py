@@ -345,7 +345,6 @@ class ClassificationModel:
             wandb.watch(self.model)
 
         model.train()
-        print('training')
         for _ in train_iterator:
             # epoch_iterator = tqdm(train_dataloader, desc="Iteration")
             for step, batch in enumerate(tqdm(train_dataloader, desc="Current iteration", disable=args["silent"])):
@@ -489,6 +488,7 @@ class ClassificationModel:
                 if not best_eval_loss:
                     best_eval_loss = results[args["early_stopping_metric"]]
                     self._save_model(args["best_model_dir"], model=model, results=results)
+                    early_stopping_counter += 1
                 elif results[args["early_stopping_metric"]] - best_eval_loss > args["early_stopping_delta"]:
                     best_eval_loss = results[args["early_stopping_metric"]]
                     self._save_model(args["best_model_dir"], model=model, results=results)
@@ -496,7 +496,6 @@ class ClassificationModel:
                 else:
                     if args["use_early_stopping"]:
                         if early_stopping_counter < args["early_stopping_patience"]:
-                            early_stopping_counter += 1
                             if verbose:
                                 print()
                                 print(f"No improvement in eval_loss for {early_stopping_counter} steps.")
