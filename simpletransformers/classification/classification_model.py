@@ -77,6 +77,7 @@ try:
 except ImportError:
     wandb_available = False
 
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
@@ -481,9 +482,9 @@ class ClassificationModel:
                                 )
                                 early_stopping_counter = 0
                             else:
+                                early_stopping_counter += 1
                                 if args["use_early_stopping"]:
                                     if early_stopping_counter < args["early_stopping_patience"]:
-                                        early_stopping_counter += 1
                                         if verbose:
                                             logger.info(f" No improvement in {args['early_stopping_metric']}")
                                             logger.info(f" Current step: {early_stopping_counter}")
@@ -502,9 +503,9 @@ class ClassificationModel:
                                 )
                                 early_stopping_counter = 0
                             else:
+                                early_stopping_counter += 1
                                 if args["use_early_stopping"]:
                                     if early_stopping_counter < args["early_stopping_patience"]:
-                                        early_stopping_counter += 1
                                         if verbose:
                                             logger.info(f" No improvement in {args['early_stopping_metric']}")
                                             logger.info(f" Current step: {early_stopping_counter}")
@@ -526,34 +527,70 @@ class ClassificationModel:
                 self._save_model(output_dir_current, optimizer, scheduler, model=model)
 
             if args["evaluate_after_every_epoch"]:
+                # Only evaluate when single GPU otherwise metrics may not average well
                 results, _, _ = self.eval_model(
                     eval_df, verbose=verbose and args["evaluate_after_every_epoch_verbose"], silent=True, **kwargs
                 )
-
-                self._save_model(output_dir_current, optimizer, scheduler, results=results)
+                for key, value in results.items():
+                    tb_writer.add_scalar("eval_{}".format(key), value, global_step)
 
                 training_progress_scores["global_step"].append(global_step)
                 training_progress_scores["train_loss"].append(current_loss)
                 for key in results:
                     training_progress_scores[key].append(results[key])
                 report = pd.DataFrame(training_progress_scores)
-                report.to_csv(os.path.join(args["output_dir"], "training_progress_scores.csv"), index=False)
+                report.to_csv(
+                    os.path.join(args["output_dir"], "training_progress_scores.csv"), index=False,
+                )
+
                 if args["wandb_project"]:
                     wandb.log(self._get_last_metrics(training_progress_scores))
-
                 if not best_eval_metric:
                     best_eval_metric = results[args["early_stopping_metric"]]
                     self._save_model(args["best_model_dir"], optimizer, scheduler, model=model, results=results)
-                if best_eval_metric and args["early_stopping_metric_minimize"]:
-                    if results[args["early_stopping_metric"]] - best_eval_metric < args["early_stopping_delta"]:
-                        best_eval_metric = results[args["early_stopping_metric"]]
-                        self._save_model(args["best_model_dir"], optimizer, scheduler, model=model, results=results)
-                        early_stopping_counter = 0
                 else:
-                    if results[args["early_stopping_metric"]] - best_eval_metric > args["early_stopping_delta"]:
-                        best_eval_metric = results[args["early_stopping_metric"]]
-                        self._save_model(args["best_model_dir"], optimizer, scheduler, model=model, results=results)
-                        early_stopping_counter = 0
+                    if best_eval_metric and args["early_stopping_metric_minimize"]:
+                        if results[args["early_stopping_metric"]] - best_eval_metric < args["early_stopping_delta"]:
+                            best_eval_metric = results[args["early_stopping_metric"]]
+                            self._save_model(
+                                args["best_model_dir"], optimizer, scheduler, model=model, results=results
+                            )
+                            early_stopping_counter = 0
+                        else:
+                            early_stopping_counter += 1
+                            if args["use_early_stopping"]:
+                                if early_stopping_counter < args["early_stopping_patience"]:
+                                    if verbose:
+                                        logger.info(f" No improvement in {args['early_stopping_metric']}")
+                                        logger.info(f" Current step: {early_stopping_counter}")
+                                        logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
+                                else:
+                                    if verbose:
+                                        logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                        logger.info(" Training terminated.")
+                                        train_iterator.close()
+                                    return global_step, tr_loss / global_step
+                    else:
+                        if results[args["early_stopping_metric"]] - best_eval_metric > args["early_stopping_delta"]:
+                            best_eval_metric = results[args["early_stopping_metric"]]
+                            self._save_model(
+                                args["best_model_dir"], optimizer, scheduler, model=model, results=results
+                            )
+                            early_stopping_counter = 0
+                        else:
+                            early_stopping_counter += 1
+                            if args["use_early_stopping"]:
+                                if early_stopping_counter < args["early_stopping_patience"]:
+                                    if verbose:
+                                        logger.info(f" No improvement in {args['early_stopping_metric']}")
+                                        logger.info(f" Current step: {early_stopping_counter}")
+                                        logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
+                                else:
+                                    if verbose:
+                                        logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                        logger.info(" Training terminated.")
+                                        train_iterator.close()
+                                        return global_step, tr_loss / global_step
 
         return global_step, tr_loss / global_step
 
