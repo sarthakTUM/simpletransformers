@@ -4,53 +4,41 @@
 
 from __future__ import absolute_import, division, print_function
 
-import os
-import math
 import json
+import logging
+import math
+import os
 import random
 import warnings
-import logging
-
 from multiprocessing import cpu_count
 
-import torch
 import numpy as np
-import pandas as pd
-
-from scipy.stats import pearsonr, mode
+from scipy.stats import mode, pearsonr
 from sklearn.metrics import (
-    mean_squared_error,
-    matthews_corrcoef,
     confusion_matrix,
     label_ranking_average_precision_score,
+    matthews_corrcoef,
+    mean_squared_error,
 )
-from tensorboardX import SummaryWriter
-from tqdm.auto import trange, tqdm
+from tqdm.auto import tqdm, trange
 
-from torch.utils.data.distributed import DistributedSampler
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
-
-from transformers import AdamW, get_linear_schedule_with_warmup
-from transformers import (
-    WEIGHTS_NAME,
-    BertConfig,
-    BertTokenizer,
-    BertModel,
-)
-from transformers.configuration_mmbt import MMBTConfig
-
+import pandas as pd
+import torch
 from simpletransformers.classification.classification_utils import (
+    ImageEncoder,
     InputExample,
+    JsonlDataset,
+    collate_fn,
     convert_examples_to_features,
     get_image_transforms,
-    JsonlDataset,
-    ImageEncoder,
-    collate_fn,
 )
-
 from simpletransformers.classification.transformer_models.mmbt_model import MMBTForClassification
 from simpletransformers.config.global_args import global_args
-
+from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
+from torch.utils.data.distributed import DistributedSampler
+from transformers import WEIGHTS_NAME, AdamW, BertConfig, BertModel, BertTokenizer, get_linear_schedule_with_warmup
+from transformers.configuration_mmbt import MMBTConfig
 
 try:
     import wandb
@@ -183,7 +171,9 @@ class MultiModalClassificationModel:
                 )
                 raise EnvironmentError(msg)
 
-        self.tokenizer = tokenizer_class.from_pretrained(model_name, do_lower_case=self.args["do_lower_case"], **kwargs)
+        self.tokenizer = tokenizer_class.from_pretrained(
+            model_name, do_lower_case=self.args["do_lower_case"], **kwargs
+        )
 
         self.args["model_name"] = model_name
         self.args["model_type"] = model_type
@@ -512,7 +502,10 @@ class MultiModalClassificationModel:
                             best_eval_metric = results[args["early_stopping_metric"]]
                             self._save_model(args["best_model_dir"], model=model, results=results)
                         if best_eval_metric and args["early_stopping_metric_minimize"]:
-                            if results[args["early_stopping_metric"]] - best_eval_metric < args["early_stopping_delta"]:
+                            if (
+                                results[args["early_stopping_metric"]] - best_eval_metric
+                                < args["early_stopping_delta"]
+                            ):
                                 best_eval_metric = results[args["early_stopping_metric"]]
                                 self._save_model(args["best_model_dir"], model=model, results=results)
                                 early_stopping_counter = 0
@@ -526,12 +519,17 @@ class MultiModalClassificationModel:
                                             logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
                                     else:
                                         if verbose:
-                                            logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                            logger.info(
+                                                f" Patience of {args['early_stopping_patience']} steps reached"
+                                            )
                                             logger.info(" Training terminated.")
                                             train_iterator.close()
                                         return global_step, tr_loss / global_step
                         else:
-                            if results[args["early_stopping_metric"]] - best_eval_metric > args["early_stopping_delta"]:
+                            if (
+                                results[args["early_stopping_metric"]] - best_eval_metric
+                                > args["early_stopping_delta"]
+                            ):
                                 best_eval_metric = results[args["early_stopping_metric"]]
                                 self._save_model(args["best_model_dir"], model=model, results=results)
                                 early_stopping_counter = 0
@@ -545,7 +543,9 @@ class MultiModalClassificationModel:
                                             logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
                                     else:
                                         if verbose:
-                                            logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                            logger.info(
+                                                f" Patience of {args['early_stopping_patience']} steps reached"
+                                            )
                                             logger.info(" Training terminated.")
                                             train_iterator.close()
                                         return global_step, tr_loss / global_step
@@ -583,11 +583,39 @@ class MultiModalClassificationModel:
                         best_eval_metric = results[args["early_stopping_metric"]]
                         self._save_model(args["best_model_dir"], model=model, results=results)
                         early_stopping_counter = 0
+                    else:
+                        if args["use_early_stopping"] and args["early_stopping_consider_epochs"]:
+                            if early_stopping_counter < args["early_stopping_patience"]:
+                                early_stopping_counter += 1
+                                if verbose:
+                                    logger.info(f" No improvement in {args['early_stopping_metric']}")
+                                    logger.info(f" Current step: {early_stopping_counter}")
+                                    logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
+                            else:
+                                if verbose:
+                                    logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                    logger.info(" Training terminated.")
+                                    train_iterator.close()
+                                return global_step, tr_loss / global_step
                 else:
                     if results[args["early_stopping_metric"]] - best_eval_metric > args["early_stopping_delta"]:
                         best_eval_metric = results[args["early_stopping_metric"]]
                         self._save_model(args["best_model_dir"], model=model, results=results)
                         early_stopping_counter = 0
+                    else:
+                        if args["use_early_stopping"] and args["early_stopping_consider_epochs"]:
+                            if early_stopping_counter < args["early_stopping_patience"]:
+                                early_stopping_counter += 1
+                                if verbose:
+                                    logger.info(f" No improvement in {args['early_stopping_metric']}")
+                                    logger.info(f" Current step: {early_stopping_counter}")
+                                    logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
+                            else:
+                                if verbose:
+                                    logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                    logger.info(" Training terminated.")
+                                    train_iterator.close()
+                                return global_step, tr_loss / global_step
 
         return global_step, tr_loss / global_step
 
@@ -658,7 +686,8 @@ class MultiModalClassificationModel:
 
         self._move_model_to_device()
 
-        # If data is a tuple, this is for early stopping and first element is data_path and second element is files_list
+        # If data is a tuple,
+        # this is for early stopping and first element is data_path and second element is files_list
         if isinstance(data, tuple):
             data, files_list = data
 
@@ -799,7 +828,7 @@ class MultiModalClassificationModel:
             data_type_extension (optional): If given, this will be added to the end of each value in "files_list".
 
         Utility function for train() and eval() methods. Not intended to be used directly.
-        """
+        """  # noqa: ignore flake8"
 
         tokenizer = self.tokenizer
         args = self.args

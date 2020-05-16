@@ -4,12 +4,210 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.28.4] - 2020-05-15
+
+### Fixed
+
+- Fixed potential bugs in loading weights when fine-tuning an ELECTRA language model. Fine-Tuning an ELECTRA language model now requires both `model_name` and `model_type` to be set to `electra`.
+
+## [0.28.3] - 2020-05-15
+
+### Changed
+
+- Updated `Seq2SeqModel` to use `MarianTokenizer` with MarianMT models. [@flozi00](https://github.com/flozi00)
+
+## [0.28.2] - 2020-05-14
+
+### Fixed
+
+- Bug fix for generic Seq2SeqModel
+
+## [0.28.1] - 2020-05-14
+
+### Fixed
+
+- Bug when training language models from scratch
+
+
+## [0.28.0] - 2020-05-11
+
+### Added
+
+- Sequence-to-Sequence task support added. This includes the following models:
+  - BART
+  - Marian
+  - Generic Encoder-Decoder
+- The `args` dict of a task-specific Simple Transformers model is now saved along with the model. When loading the model, these values will be read and used.
+Any new `args` passed into the model initialization will override the loaded values.
+
+## [0.27.3] - 2020-05-10
+
+### Added
+
+- Support for `AutoModel` in NER, QA, and LanguageModeling. [@flozi00](https://github.com/flozi00)
+
+### Fixed
+
+- Now predict function from NER_Model returns a value model_outputs that contains:
+  A Python list of lists with dicts containing each word mapped to its list with raw model output. [@flaviussn](https://github.com/flaviussn)
+
+### Changed
+
+- Pillow import is now optional. It only needs to be installed if MultiModal models are used.
+
+## [0.27.2] - 2020-05-08
+
+### Fixed
+
+- Fixed T5 lm_labels not being masked properly
+
+### Changed
+
+- Torchvision import is now optional. It only needs to be installed if MultiModal models are used.
+
+## [0.27.1] - 2020-05-05
+
+### Fixed
+
+- Fixed issue with custom evaluation metrics not being handled correctly in `MultiLabelClassificationModel`. [@galtay](https://github.com/galtay)
+
+## [0.27.0] - 2020-05-05
+
+### Added
+
+- Added support for T5 Model.
+- Added `do_sample` arg to language generation.
+- `NERModel.predict()` now accepts a `split_on_space` optional argument. If set to `False`, `to_predict` must be a a list of lists, with the inner list being a list of strings consisting of the split sequences. The outer list is the list of sequences to predict on. 
+
+### Changed
+
+- `eval_df` argument in `NERModel.train_model()` renamed to `eval_data` to better reflect the input format. Added Deprecation Warning.
+
+
+## [0.26.1] - 2020-04-27
+
+### Fixed
+
+- Specifying `verbose=False` in `LanguageGenerationModel.generate()` method now correctly silences logger output.
+
+
+## [0.26.0] - 2020-04-25
+
+### Added
+
+- Added Electra model support for sequence classification (binary, multiclass, multilabel)
+- Added Electra model support for question answering
+- Added Roberta model support for question answering
+
+### Changed
+
+- Reduced logger messages during question answering evaluation
+
+## [0.25.0] - 2020-04-24
+
+### Added
+
+- Added support for Language Generation tasks.
+
+## [0.24.9] - 2020-04-22
+
+### Added
+
+- Added support for custom metrics with `QuestionAnsweringModel`.
+
+### Fixed
+
+- Fixed issue with passing proxies to ConvAI models. [@Pradhy729](https://github.com/Pradhy729)
+
+## [0.24.8] - 2020-04-13
+
+### Fixed
+
+- Fixed incorrect indexes when extracting hidden layer outputs and embedding outputs with `ClassificationModel.predict()` method.
+
+## [0.24.7] - 2020-04-13
+
+### Added
+
+- Added option to get hidden layer outputs and embedding outputs with `ClassificationModel.predict()` method.
+  - Setting `config: {"output_hidden_states": True}` will automatically return all embedding outputs and hidden layer outputs.
+
+### Changed
+
+- `global_args` now has a `config` dictionary which can be used to override default values in the confg class.
+  - This can be used with ClassificationModel, MultiLabelClassificationModel, NERModel, QuestionAnsweringModel, and LanguageModelingModel
+
+## [0.24.6] - 2020-04-12
+
+### Added
+
+- Added support for ELECTRA based NER models.
+
+## [0.24.5] - 2020-04-11
+
+### Fixed
+
+- Fixed bug in `LanguageModelingModel` when loading from a training checkpoint.
+
+## [0.24.4] - 2020-04-10
+
+### Fixed
+
+- Fixed bug in `LanguageModelingModel` initialization with a trained tokenizer.
+
+### Added
+
+- Added support for passing proxy information with ConvAI model.
+
+## [0.24.3] - 2020-04-10
+
+### Fixed
+
+- Fixed potential bug in NERModel `predict()` method when using custom labels.
+- Fixed typo in the NERModel description in the readme.
+
+## [0.24.2] - 2020-04-09
+
+### Fixed
+
+- Fixed issues with `vocab_size` not being set properly in ELECTRA models.
+
+## [0.24.1] - 2020-04-09
+
+### Fixed
+
+- Fixed bugs in minimal examples for language modeling.
+
+### Changed
+
+- Added `vocab_size` back to default `args` dict for clarity. (`vocab_size` is `None` by default)
+- Changed error message when training a new tokenizer with incorrect parameters for clarity.
+
+## [0.24.0] - 2020-04-09
+
+### Added
+
+- Added ELECTRA pretraining support.
+- Added better support for configuring model architectures when training language models from scratch.
+  - Any options which should be overriden from the default config can now be specified in the `args` dict. (`config` key)
+
+### Changed
+
+- Default entry for `vocab_size` removed from `args` for `LanguageModelingModel` as it differs for different model types.
+  - `vocab_size` must now be specified whenever a new tokenizer is to be trained.
+
+### Fixed
+
+- Fixed bugs when training BERT (with word piece tokenization) language models from scratch.
+- Fixed incorrect special tokens being used with BERT models when training a new tokenizer.
+- Fixed potential bugs with BERT tokenizer training.
+
 ## [0.23.3] - 2020-04-05
 
 ### Fixed
 
 - Fixed bug in `QuestionAnsweringModel` where the `save_model()` method wasn't being called properly.
-- Fixed bug in calculating global step when resuming training
+- Fixed bug in calculating global step when resuming training.
 
 ## [0.23.2] - 2020-04-02
 
@@ -510,7 +708,49 @@ Model checkpoint is now saved for all epochs again.
 
 - This CHANGELOG file to hopefully serve as an evolving example of a standardized open source project CHANGELOG.
 
-[0.23.3]: https://github.com/ThilinaRajapakse/simpletransformers/compare/3069694...HEAD
+[0.28.3]: https://github.com/ThilinaRajapakse/simpletransformers/compare/ac097e4...HEAD
+
+[0.28.3]: https://github.com/ThilinaRajapakse/simpletransformers/compare/ca87582...ac097e4
+
+[0.28.2]: https://github.com/ThilinaRajapakse/simpletransformers/compare/1695fc4...ca87582
+
+[0.28.1]: https://github.com/ThilinaRajapakse/simpletransformers/compare/4d9665d...1695fc4
+
+[0.28.0]: https://github.com/ThilinaRajapakse/simpletransformers/compare/402bd8e...4d9665d
+
+[0.27.3]: https://github.com/ThilinaRajapakse/simpletransformers/compare/bc94b34...402bd8e
+
+[0.27.2]: https://github.com/ThilinaRajapakse/simpletransformers/compare/d665494...bc94b34
+
+[0.27.1]: https://github.com/ThilinaRajapakse/simpletransformers/compare/32d5a1a...d665494
+
+[0.27.0]: https://github.com/ThilinaRajapakse/simpletransformers/compare/ab1e600...32d5a1a
+
+[0.26.1]: https://github.com/ThilinaRajapakse/simpletransformers/compare/3d4f616...ab1e600
+
+[0.26.0]: https://github.com/ThilinaRajapakse/simpletransformers/compare/aa8e6a6...3d4f616
+
+[0.25.0]: https://github.com/ThilinaRajapakse/simpletransformers/compare/445d386...aa8e6a6
+
+[0.24.9]: https://github.com/ThilinaRajapakse/simpletransformers/compare/52fea69...445d386
+
+[0.24.8]: https://github.com/ThilinaRajapakse/simpletransformers/compare/e9b1f41...52fea69
+
+[0.24.7]: https://github.com/ThilinaRajapakse/simpletransformers/compare/853ca94...e9b1f41
+
+[0.24.6]: https://github.com/ThilinaRajapakse/simpletransformers/compare/777f78d...853ca94
+
+[0.24.5]: https://github.com/ThilinaRajapakse/simpletransformers/compare/8f1daac...777f78d
+
+[0.24.3]: https://github.com/ThilinaRajapakse/simpletransformers/compare/ce4b925...8f1daac
+
+[0.24.2]: https://github.com/ThilinaRajapakse/simpletransformers/compare/91b7ae1...ce4b925
+
+[0.24.1]: https://github.com/ThilinaRajapakse/simpletransformers/compare/ae6b6ea...91b7ae1
+
+[0.24.0]: https://github.com/ThilinaRajapakse/simpletransformers/compare/17b1c23...ae6b6ea
+
+[0.23.3]: https://github.com/ThilinaRajapakse/simpletransformers/compare/3069694...17b1c23
 
 [0.23.2]: https://github.com/ThilinaRajapakse/simpletransformers/compare/96bc291...3069694
 

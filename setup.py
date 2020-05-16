@@ -1,12 +1,11 @@
 from setuptools import find_packages, setup
 
-
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(
     name="simpletransformers",
-    version="0.23.3",
+    version="0.28.4",
     author="Thilina Rajapakse",
     author_email="chaturangarajapakshe@gmail.com",
     description="An easy-to-use wrapper library for the Transformers library.",
@@ -26,7 +25,7 @@ setup(
         "requests",
         "tqdm",
         "regex",
-        "transformers",
+        "transformers>=2.9.1",
         "scipy",
         "scikit-learn",
         "seqeval",

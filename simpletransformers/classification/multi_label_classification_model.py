@@ -1,40 +1,41 @@
-import torch
-
-from multiprocessing import cpu_count
-import warnings
 import logging
+import warnings
+from multiprocessing import cpu_count
 
+import torch
 from simpletransformers.classification import ClassificationModel
-from simpletransformers.custom_models.models import (
-    BertForMultiLabelSequenceClassification,
-    RobertaForMultiLabelSequenceClassification,
-    XLNetForMultiLabelSequenceClassification,
-    XLMForMultiLabelSequenceClassification,
-    DistilBertForMultiLabelSequenceClassification,
-    AlbertForMultiLabelSequenceClassification,
-    FlaubertForMultiLabelSequenceClassification,
-    XLMRobertaForMultiLabelSequenceClassification,
-)
 from simpletransformers.config.global_args import global_args
-
+from simpletransformers.custom_models.models import (
+    AlbertForMultiLabelSequenceClassification,
+    BertForMultiLabelSequenceClassification,
+    DistilBertForMultiLabelSequenceClassification,
+    ElectraForMultiLabelSequenceClassification,
+    FlaubertForMultiLabelSequenceClassification,
+    RobertaForMultiLabelSequenceClassification,
+    XLMForMultiLabelSequenceClassification,
+    XLMRobertaForMultiLabelSequenceClassification,
+    XLNetForMultiLabelSequenceClassification,
+)
 from transformers import (
     WEIGHTS_NAME,
-    BertConfig,
-    BertTokenizer,
-    XLNetConfig,
-    XLNetTokenizer,
-    XLMConfig,
-    XLMTokenizer,
-    RobertaConfig,
-    RobertaTokenizer,
-    DistilBertConfig,
-    DistilBertTokenizer,
     AlbertConfig,
     AlbertTokenizer,
+    BertConfig,
+    BertTokenizer,
+    DistilBertConfig,
+    DistilBertTokenizer,
+    ElectraConfig,
+    ElectraTokenizer,
     FlaubertConfig,
     FlaubertTokenizer,
+    RobertaConfig,
+    RobertaTokenizer,
+    XLMConfig,
     XLMRobertaConfig,
     XLMRobertaTokenizer,
+    XLMTokenizer,
+    XLNetConfig,
+    XLNetTokenizer,
 )
 
 try:
@@ -83,16 +84,39 @@ class MultiLabelClassificationModel(ClassificationModel):
             "albert": (AlbertConfig, AlbertForMultiLabelSequenceClassification, AlbertTokenizer,),
             "flaubert": (FlaubertConfig, FlaubertForMultiLabelSequenceClassification, FlaubertTokenizer,),
             "xlmroberta": (XLMRobertaConfig, XLMRobertaForMultiLabelSequenceClassification, XLMRobertaTokenizer,),
+            "electra": (ElectraConfig, ElectraForMultiLabelSequenceClassification, ElectraTokenizer),
         }
+
+        self.args = {
+            "threshold": 0.5,
+            "sliding_window": False,
+            "tie_value": 1,
+            "stride": False,
+        }
+
+        self.args.update(global_args)
+
+        saved_model_args = self._load_model_args(model_name)
+        if saved_model_args:
+            self.args.update(saved_model_args)
+
+        if args:
+            self.args.update(args)
+
+        if not use_cuda:
+            self.args["fp16"] = False
+
+        if args:
+            if args.get("sliding_window"):
+                raise ValueError("sliding_window is not implemented for multi-label classification.")
+            self.args.update(args)
 
         config_class, model_class, tokenizer_class = MODEL_CLASSES[model_type]
         if num_labels:
-
-            self.config = config_class.from_pretrained(model_name, num_labels=num_labels, **kwargs)
-
+            self.config = config_class.from_pretrained(model_name, num_labels=num_labels, **self.args["config"])
             self.num_labels = num_labels
         else:
-            self.config = config_class.from_pretrained(model_name, **kwargs)
+            self.config = config_class.from_pretrained(model_name, **self.args["config"])
             self.num_labels = self.config.num_labels
         self.pos_weight = pos_weight
 
@@ -119,24 +143,9 @@ class MultiLabelClassificationModel(ClassificationModel):
 
         self.results = {}
 
-        self.args = {
-            "threshold": 0.5,
-            "sliding_window": False,
-            "tie_value": 1,
-            "stride": False,
-        }
-
-        self.args.update(global_args)
-
-        if not use_cuda:
-            self.args["fp16"] = False
-
-        if args:
-            if args.get("sliding_window"):
-                raise ValueError("sliding_window is not implemented for multi-label classification.")
-            self.args.update(args)
-
-        self.tokenizer = tokenizer_class.from_pretrained(model_name, do_lower_case=self.args["do_lower_case"], **kwargs)
+        self.tokenizer = tokenizer_class.from_pretrained(
+            model_name, do_lower_case=self.args["do_lower_case"], **kwargs
+        )
 
         self.args["model_name"] = model_name
         self.args["model_type"] = model_type
@@ -164,6 +173,7 @@ class MultiLabelClassificationModel(ClassificationModel):
             show_running_loss=show_running_loss,
             verbose=True,
             args=args,
+            **kwargs,
         )
 
     def eval_model(self, eval_df, multi_label=True, output_dir=None, verbose=False, silent=False, **kwargs):

@@ -1,15 +1,17 @@
+import logging
 import os
 import pickle
-import logging
-from typing import Tuple
 from multiprocessing import Pool
+from typing import Tuple
+
+from tqdm.auto import tqdm
 
 import torch
-from torch.utils.data import Dataset
-from transformers import PreTrainedTokenizer
 from tokenizers.implementations import ByteLevelBPETokenizer
 from tokenizers.processors import BertProcessing
-from tqdm.auto import tqdm
+from torch.utils.data import Dataset
+from transformers import PreTrainedTokenizer
+
 
 logger = logging.getLogger(__name__)
 
@@ -183,14 +185,17 @@ class SimpleDataset(Dataset):
                         if (len(line) > 0 and not line.isspace())
                     ]
 
-                with Pool(args["process_count"]) as p:
-                    self.examples = list(
-                        tqdm(
-                            p.imap(encode_sliding_window, lines, chunksize=50),
-                            total=len(lines),
-                            # disable=silent,
+                if args["use_multiprocessing"]:
+                    with Pool(args["process_count"]) as p:
+                        self.examples = list(
+                            tqdm(
+                                p.imap(encode_sliding_window, lines, chunksize=50),
+                                total=len(lines),
+                                # disable=silent,
+                            )
                         )
-                    )
+                else:
+                    self.examples = [encode_sliding_window(line) for line in lines]
 
                 self.examples = [example for example_set in self.examples for example in example_set]
             else:
@@ -199,14 +204,17 @@ class SimpleDataset(Dataset):
                         (tokenizer, line) for line in f.read().splitlines() if (len(line) > 0 and not line.isspace())
                     ]
 
-                with Pool(args["process_count"]) as p:
-                    self.examples = list(
-                        tqdm(
-                            p.imap(encode, lines, chunksize=50),
-                            total=len(lines),
-                            # disable=silent,
+                if args["use_multiprocessing"]:
+                    with Pool(args["process_count"]) as p:
+                        self.examples = list(
+                            tqdm(
+                                p.imap(encode, lines, chunksize=500),
+                                total=len(lines),
+                                # disable=silent,
+                            )
                         )
-                    )
+                else:
+                    self.examples = [encode(line) for line in lines]
 
                 self.examples = [token for tokens in self.examples for token in tokens]
                 self.examples = [

@@ -1,30 +1,29 @@
-import torch
-
 from multiprocessing import cpu_count
 
+import torch
 from simpletransformers.classification import ClassificationModel
 from simpletransformers.custom_models.models import (
-    BertForMultiLabelSequenceClassification,
-    RobertaForMultiLabelSequenceClassification,
-    XLNetForMultiLabelSequenceClassification,
-    XLMForMultiLabelSequenceClassification,
-    DistilBertForMultiLabelSequenceClassification,
     AlbertForMultiLabelSequenceClassification,
+    BertForMultiLabelSequenceClassification,
+    DistilBertForMultiLabelSequenceClassification,
+    RobertaForMultiLabelSequenceClassification,
+    XLMForMultiLabelSequenceClassification,
+    XLNetForMultiLabelSequenceClassification,
 )
 from transformers import (
     WEIGHTS_NAME,
-    BertConfig,
-    BertTokenizer,
-    XLNetConfig,
-    XLNetTokenizer,
-    XLMConfig,
-    XLMTokenizer,
-    RobertaConfig,
-    RobertaTokenizer,
-    DistilBertConfig,
-    DistilBertTokenizer,
     AlbertConfig,
     AlbertTokenizer,
+    BertConfig,
+    BertTokenizer,
+    DistilBertConfig,
+    DistilBertTokenizer,
+    RobertaConfig,
+    RobertaTokenizer,
+    XLMConfig,
+    XLMTokenizer,
+    XLNetConfig,
+    XLNetTokenizer,
 )
 
 
@@ -120,7 +119,9 @@ class MultiLabelClassificationModel(ClassificationModel):
         self.args["model_name"] = model_name
         self.args["model_type"] = model_type
 
-    def train_model(self, train_df, multi_label=True, eval_df=None, output_dir=None, show_running_loss=True, args=None):
+    def train_model(
+        self, train_df, multi_label=True, eval_df=None, output_dir=None, show_running_loss=True, args=None
+    ):
         return super().train_model(
             train_df,
             multi_label=multi_label,

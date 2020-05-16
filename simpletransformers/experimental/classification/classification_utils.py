@@ -17,18 +17,16 @@
 
 from __future__ import absolute_import, division, print_function
 
-import os
-import sys
 import csv
 import logging
-
+import os
+import sys
 from io import open
 from multiprocessing import Pool, cpu_count
 
-from tqdm.auto import tqdm
 from scipy.stats import pearsonr, spearmanr
-from sklearn.metrics import matthews_corrcoef, f1_score
-
+from sklearn.metrics import f1_score, matthews_corrcoef
+from tqdm.auto import tqdm
 
 logger = logging.getLogger(__name__)
 csv.field_size_limit(2147483647)
@@ -368,7 +366,9 @@ def convert_examples_to_features(
             with Pool(process_count) as p:
                 features = list(
                     tqdm(
-                        p.imap(convert_example_to_feature, examples, chunksize=500), total=len(examples), disable=silent
+                        p.imap(convert_example_to_feature, examples, chunksize=500),
+                        total=len(examples),
+                        disable=silent,
                     )
                 )
         else:

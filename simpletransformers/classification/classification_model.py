@@ -4,71 +4,66 @@
 
 from __future__ import absolute_import, division, print_function
 
-import os
-import math
 import json
+import logging
+import math
+import os
 import random
 import warnings
-import logging
-
 from multiprocessing import cpu_count
 
-import torch
 import numpy as np
-import pandas as pd
-
-from scipy.stats import pearsonr, mode
+from scipy.stats import mode, pearsonr
 from sklearn.metrics import (
-    mean_squared_error,
-    matthews_corrcoef,
     confusion_matrix,
     label_ranking_average_precision_score,
+    matthews_corrcoef,
+    mean_squared_error,
 )
-from tensorboardX import SummaryWriter
-from tqdm.auto import trange, tqdm
+from tqdm.auto import tqdm, trange
 
-from torch.utils.data.distributed import DistributedSampler
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
-
-from transformers import AdamW, get_linear_schedule_with_warmup
-from transformers import (
-    WEIGHTS_NAME,
-    BertConfig,
-    BertTokenizer,
-    XLNetConfig,
-    XLNetTokenizer,
-    XLMConfig,
-    XLMTokenizer,
-    RobertaConfig,
-    RobertaTokenizer,
-    DistilBertConfig,
-    DistilBertTokenizer,
-    AlbertConfig,
-    AlbertTokenizer,
-    CamembertConfig,
-    CamembertTokenizer,
-    XLMRobertaConfig,
-    XLMRobertaTokenizer,
-    FlaubertConfig,
-    FlaubertTokenizer,
-)
-
-from simpletransformers.classification.classification_utils import (
-    InputExample,
-    convert_examples_to_features,
-)
-
+import pandas as pd
+import torch
+from simpletransformers.classification.classification_utils import InputExample, convert_examples_to_features
+from simpletransformers.classification.transformer_models.albert_model import AlbertForSequenceClassification
 from simpletransformers.classification.transformer_models.bert_model import BertForSequenceClassification
+from simpletransformers.classification.transformer_models.camembert_model import CamembertForSequenceClassification
+from simpletransformers.classification.transformer_models.distilbert_model import DistilBertForSequenceClassification
+from simpletransformers.classification.transformer_models.flaubert_model import FlaubertForSequenceClassification
 from simpletransformers.classification.transformer_models.roberta_model import RobertaForSequenceClassification
 from simpletransformers.classification.transformer_models.xlm_model import XLMForSequenceClassification
-from simpletransformers.classification.transformer_models.xlnet_model import XLNetForSequenceClassification
-from simpletransformers.classification.transformer_models.distilbert_model import DistilBertForSequenceClassification
-from simpletransformers.classification.transformer_models.albert_model import AlbertForSequenceClassification
-from simpletransformers.classification.transformer_models.camembert_model import CamembertForSequenceClassification
 from simpletransformers.classification.transformer_models.xlm_roberta_model import XLMRobertaForSequenceClassification
-from simpletransformers.classification.transformer_models.flaubert_model import FlaubertForSequenceClassification
-
+from simpletransformers.classification.transformer_models.xlnet_model import XLNetForSequenceClassification
 from simpletransformers.config.global_args import global_args
+from simpletransformers.custom_models.models import ElectraForSequenceClassification
+from tensorboardX import SummaryWriter
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, TensorDataset
+from torch.utils.data.distributed import DistributedSampler
+from transformers import (
+    WEIGHTS_NAME,
+    AdamW,
+    AlbertConfig,
+    AlbertTokenizer,
+    BertConfig,
+    BertTokenizer,
+    CamembertConfig,
+    CamembertTokenizer,
+    DistilBertConfig,
+    DistilBertTokenizer,
+    ElectraConfig,
+    ElectraTokenizer,
+    FlaubertConfig,
+    FlaubertTokenizer,
+    RobertaConfig,
+    RobertaTokenizer,
+    XLMConfig,
+    XLMRobertaConfig,
+    XLMRobertaTokenizer,
+    XLMTokenizer,
+    XLNetConfig,
+    XLNetTokenizer,
+    get_linear_schedule_with_warmup,
+)
 
 try:
     import wandb
@@ -91,7 +86,7 @@ class ClassificationModel:
 
         Args:
             model_type: The type of model (bert, xlnet, xlm, roberta, distilbert)
-            model_name: Default Transformer model name or path to a directory containing Transformer model file (pytorch_nodel.bin).
+            model_name: The exact architecture and trained weights to use. This may be a Hugging Face Transformers compatible pre-trained model, a community model, or the path to a directory containing model files.
             num_labels (optional): The number of labels or classes in the dataset.
             weight (optional): A list of length num_labels containing the weights to assign to each label for loss calculation.
             args (optional): Default args will be used if this parameter is not provided. If provided, it should be a dict containing the args that should be changed in the default args.
@@ -110,6 +105,7 @@ class ClassificationModel:
             "camembert": (CamembertConfig, CamembertForSequenceClassification, CamembertTokenizer),
             "xlmroberta": (XLMRobertaConfig, XLMRobertaForSequenceClassification, XLMRobertaTokenizer),
             "flaubert": (FlaubertConfig, FlaubertForSequenceClassification, FlaubertTokenizer),
+            "electra": (ElectraConfig, ElectraForSequenceClassification, ElectraTokenizer),
         }
 
         if args and "manual_seed" in args:
@@ -119,12 +115,28 @@ class ClassificationModel:
             if "n_gpu" in args and args["n_gpu"] > 0:
                 torch.cuda.manual_seed_all(args["manual_seed"])
 
+        self.args = {
+            "sliding_window": False,
+            "tie_value": 1,
+            "stride": 0.8,
+            "regression": False,
+        }
+
+        self.args.update(global_args)
+
+        saved_model_args = self._load_model_args(model_name)
+        if saved_model_args:
+            self.args.update(saved_model_args)
+
+        if args:
+            self.args.update(args)
+
         config_class, model_class, tokenizer_class = MODEL_CLASSES[model_type]
         if num_labels:
-            self.config = config_class.from_pretrained(model_name, num_labels=num_labels, **kwargs)
+            self.config = config_class.from_pretrained(model_name, num_labels=num_labels, **self.args["config"])
             self.num_labels = num_labels
         else:
-            self.config = config_class.from_pretrained(model_name, **kwargs)
+            self.config = config_class.from_pretrained(model_name, **self.args["config"])
             self.num_labels = self.config.num_labels
         self.weight = weight
 
@@ -143,7 +155,6 @@ class ClassificationModel:
             self.device = "cpu"
 
         if self.weight:
-
             self.model = model_class.from_pretrained(
                 model_name, config=self.config, weight=torch.Tensor(self.weight).to(self.device), **kwargs,
             )
@@ -152,22 +163,12 @@ class ClassificationModel:
 
         self.results = {}
 
-        self.args = {
-            "sliding_window": False,
-            "tie_value": 1,
-            "stride": 0.8,
-            "regression": False,
-        }
-
-        self.args.update(global_args)
-
         if not use_cuda:
             self.args["fp16"] = False
 
-        if args:
-            self.args.update(args)
-
-        self.tokenizer = tokenizer_class.from_pretrained(model_name, do_lower_case=self.args["do_lower_case"], **kwargs)
+        self.tokenizer = tokenizer_class.from_pretrained(
+            model_name, do_lower_case=self.args["do_lower_case"], **kwargs
+        )
 
         self.args["model_name"] = model_name
         self.args["model_type"] = model_type
@@ -450,7 +451,10 @@ class ClassificationModel:
                     ):
                         # Only evaluate when single GPU otherwise metrics may not average well
                         results, _, _ = self.eval_model(
-                            eval_df, verbose=verbose and args["evaluate_during_training_verbose"], silent=True, **kwargs
+                            eval_df,
+                            verbose=verbose and args["evaluate_during_training_verbose"],
+                            silent=True,
+                            **kwargs,
                         )
                         for key, value in results.items():
                             tb_writer.add_scalar("eval_{}".format(key), value, global_step)
@@ -473,9 +477,14 @@ class ClassificationModel:
                             wandb.log(self._get_last_metrics(training_progress_scores))
                         if not best_eval_metric:
                             best_eval_metric = results[args["early_stopping_metric"]]
-                            self._save_model(args["best_model_dir"], optimizer, scheduler, model=model, results=results)
+                            self._save_model(
+                                args["best_model_dir"], optimizer, scheduler, model=model, results=results
+                            )
                         if best_eval_metric and args["early_stopping_metric_minimize"]:
-                            if results[args["early_stopping_metric"]] - best_eval_metric < args["early_stopping_delta"]:
+                            if (
+                                results[args["early_stopping_metric"]] - best_eval_metric
+                                < args["early_stopping_delta"]
+                            ):
                                 best_eval_metric = results[args["early_stopping_metric"]]
                                 self._save_model(
                                     args["best_model_dir"], optimizer, scheduler, model=model, results=results
@@ -491,12 +500,17 @@ class ClassificationModel:
                                             logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
                                     else:
                                         if verbose:
-                                            logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                            logger.info(
+                                                f" Patience of {args['early_stopping_patience']} steps reached"
+                                            )
                                             logger.info(" Training terminated.")
                                             train_iterator.close()
                                         return global_step, tr_loss / global_step
                         else:
-                            if results[args["early_stopping_metric"]] - best_eval_metric > args["early_stopping_delta"]:
+                            if (
+                                results[args["early_stopping_metric"]] - best_eval_metric
+                                > args["early_stopping_delta"]
+                            ):
                                 best_eval_metric = results[args["early_stopping_metric"]]
                                 self._save_model(
                                     args["best_model_dir"], optimizer, scheduler, model=model, results=results
@@ -512,7 +526,9 @@ class ClassificationModel:
                                             logger.info(f" Early stopping patience: {args['early_stopping_patience']}")
                                     else:
                                         if verbose:
-                                            logger.info(f" Patience of {args['early_stopping_patience']} steps reached")
+                                            logger.info(
+                                                f" Patience of {args['early_stopping_patience']} steps reached"
+                                            )
                                             logger.info(" Training terminated.")
                                             train_iterator.close()
                                         return global_step, tr_loss / global_step
@@ -608,7 +624,7 @@ class ClassificationModel:
                         A metric function should take in two parameters. The first parameter will be the true labels, and the second parameter will be the predictions.
 
         Returns:
-            result: Dictionary containing evaluation results. (Matthews correlation coefficient, tp, tn, fp, fn)
+            result: Dictionary containing evaluation results.
             model_outputs: List of model outputs for each row in eval_df
             wrong_preds: List of InputExample objects corresponding to each incorrect prediction by the model
         """  # noqa: ignore flake8"
@@ -927,28 +943,59 @@ class ClassificationModel:
         preds = None
         out_label_ids = None
 
-        for batch in tqdm(eval_dataloader, disable=args["silent"]):
-            model.eval()
-            batch = tuple(t.to(device) for t in batch)
+        if self.config.output_hidden_states:
+            for batch in tqdm(eval_dataloader, disable=args["silent"]):
+                model.eval()
+                batch = tuple(t.to(device) for t in batch)
 
-            with torch.no_grad():
-                inputs = self._get_inputs_dict(batch)
-                outputs = model(**inputs)
-                tmp_eval_loss, logits = outputs[:2]
+                with torch.no_grad():
+                    inputs = self._get_inputs_dict(batch)
+                    outputs = model(**inputs)
+                    tmp_eval_loss, logits = outputs[:2]
+                    embedding_outputs, layer_hidden_states = outputs[2][0], outputs[2][1:]
 
-                if multi_label:
-                    logits = logits.sigmoid()
+                    if multi_label:
+                        logits = logits.sigmoid()
 
-                eval_loss += tmp_eval_loss.mean().item()
+                    eval_loss += tmp_eval_loss.mean().item()
 
-            nb_eval_steps += 1
+                nb_eval_steps += 1
 
-            if preds is None:
-                preds = logits.detach().cpu().numpy()
-                out_label_ids = inputs["labels"].detach().cpu().numpy()
-            else:
-                preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
-                out_label_ids = np.append(out_label_ids, inputs["labels"].detach().cpu().numpy(), axis=0)
+                if preds is None:
+                    preds = logits.detach().cpu().numpy()
+                    out_label_ids = inputs["labels"].detach().cpu().numpy()
+                    all_layer_hidden_states = [state.detach().cpu().numpy() for state in layer_hidden_states]
+                    all_embedding_outputs = embedding_outputs.detach().cpu().numpy()
+                else:
+                    preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+                    out_label_ids = np.append(out_label_ids, inputs["labels"].detach().cpu().numpy(), axis=0)
+                    all_layer_hidden_states = np.append(
+                        [state.detach().cpu().numpy() for state in layer_hidden_states], axis=0
+                    )
+                    all_embedding_outputs = np.append(embedding_outputs.detach().cpu().numpy(), axis=0)
+        else:
+            for batch in tqdm(eval_dataloader, disable=args["silent"]):
+                model.eval()
+                batch = tuple(t.to(device) for t in batch)
+
+                with torch.no_grad():
+                    inputs = self._get_inputs_dict(batch)
+                    outputs = model(**inputs)
+                    tmp_eval_loss, logits = outputs[:2]
+
+                    if multi_label:
+                        logits = logits.sigmoid()
+
+                    eval_loss += tmp_eval_loss.mean().item()
+
+                nb_eval_steps += 1
+
+                if preds is None:
+                    preds = logits.detach().cpu().numpy()
+                    out_label_ids = inputs["labels"].detach().cpu().numpy()
+                else:
+                    preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
+                    out_label_ids = np.append(out_label_ids, inputs["labels"].detach().cpu().numpy(), axis=0)
 
         eval_loss = eval_loss / nb_eval_steps
 
@@ -989,7 +1036,10 @@ class ClassificationModel:
             else:
                 preds = np.argmax(preds, axis=1)
 
-        return preds, model_outputs
+        if self.config.output_hidden_states:
+            return preds, model_outputs, all_embedding_outputs, all_layer_hidden_states
+        else:
+            return preds, model_outputs
 
     def _threshold(self, x, threshold):
         if x >= threshold:
@@ -1063,9 +1113,22 @@ class ClassificationModel:
             torch.save(self.args, os.path.join(output_dir, "training_args.bin"))
             torch.save(optimizer.state_dict(), os.path.join(output_dir, "optimizer.pt"))
             torch.save(scheduler.state_dict(), os.path.join(output_dir, "scheduler.pt"))
+            self._save_model_args(output_dir)
 
         if results:
             output_eval_file = os.path.join(output_dir, "eval_results.txt")
             with open(output_eval_file, "w") as writer:
                 for key in sorted(results.keys()):
                     writer.write("{} = {}\n".format(key, str(results[key])))
+
+    def _save_model_args(self, output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+        with open(os.path.join(output_dir, "model_args.json"), "w") as f:
+            json.dump(self.args, f)
+
+    def _load_model_args(self, input_dir):
+        model_args_file = os.path.join(input_dir, "model_args.json")
+        if os.path.isfile(model_args_file):
+            with open(model_args_file, "r") as f:
+                model_args = json.load(f)
+            return model_args
